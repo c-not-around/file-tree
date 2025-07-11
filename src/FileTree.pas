@@ -28,17 +28,25 @@ uses
 
 
 var
-  Main      : Form;
-  PathView  : TreeView;
-  ImgList   : ImageList;
-  FileMenu  : ContextMenuStrip;
-  FolderMenu: ContextMenuStrip;
-  CmderPath : string;
-  HexEditor : string;
-  Notepad   : string;
+  Main         : Form;
+  PathView     : TreeView;
+  ImgList      : ImageList;
+  FileMenu     : ContextMenuStrip;
+  FolderMenu   : ContextMenuStrip;
+  CmderPath    : string;
+  HexEditor    : string;
+  Notepad      : string;
+  ExpandEnd    : boolean;
+  HandleCreated: boolean := false;
 
 
 {$region Utils}
+procedure Log(format: string; params objects: array of object);
+begin
+  var text := String.Format(format, objects);
+  &File.AppendAllText('debug.log', text+#13#10);
+end;
+
 function GetIconFromExt(fname: string): string;
 begin
   var p := fname.LastIndexOf('.');
@@ -73,7 +81,7 @@ begin
     result := Color.Black;
 end;
 
-procedure FillTreeNode(node: TreeNode; path: string; dept: integer := 0);
+procedure FillTreeNode(node: TreeNode; path: string; dept: integer := 1);
 begin
   PathView.Invoke(() -> begin node.Nodes.Clear(); end);
   
@@ -121,13 +129,83 @@ begin
       );
     end;
   end;
+  
+  if dept = 1 then
+    begin
+      PathView.Invoke(() -> begin PathView.Cursor := Cursors.Default; end);
+      ExpandEnd := true;
+    end;
+end;
+
+function FindNode(node: TreeNode; name: string): TreeNode;
+begin
+  result := nil;
+  
+  var nodes := node <> nil ? node.Nodes : PathView.Nodes;
+  
+  foreach var n: TreeNode in nodes do
+    if n.Text.ToLower() = name then
+      begin
+        result := n;
+        break;
+      end;
+end;
+
+procedure OpenPath(path: string);
+begin
+  repeat
+    Thread.Sleep(10);
+  until HandleCreated;
+  
+  try
+    var node: TreeNode := nil;
+    var parents := path.ToLower().Split('\');
+    
+    foreach var parent in parents do
+      begin
+        PathView.Invoke(() -> begin node := FindNode(node, parent); end);
+        
+        if node <> nil then
+          begin
+            ExpandEnd := false;
+            
+            PathView.Invoke(() -> 
+              begin
+                node.Expand();
+                ExpandEnd := node.Nodes.Count = 0;
+              end
+            );
+            
+            repeat
+              Thread.Sleep(10);
+            until ExpandEnd;
+          end
+        else
+          break;
+      end;
+      
+      PathView.Invoke(() ->
+        begin
+          if node <> nil then
+            PathView.SelectedNode := node; 
+        end
+      );
+  except on ex: Exception do
+    MessageBox.Show(ex.Message, 'Error', MessageBoxButtons.OK, MessageBoxIcon.Error);
+  end;
 end;
 {$endregion}
 
 {$region Handlers}
+procedure MainHandleCreated(sender: object; e: EventArgs);
+begin
+  HandleCreated := true;
+end;
+
 procedure PathViewBeforeExpand(sender: object; e: TreeViewCancelEventArgs);
 begin
-  Task.Factory.StartNew(() -> begin FillTreeNode(e.Node, e.Node.FullPath, 1); end);
+  PathView.Cursor := Cursors.WaitCursor;
+  Task.Factory.StartNew(() -> begin FillTreeNode(e.Node, e.Node.FullPath); end);
 end;
 
 procedure PathViewMouseClick(sender: object; e: MouseEventArgs);
@@ -198,6 +276,7 @@ begin
   Main.Icon            := new Icon(System.Reflection.Assembly.GetEntryAssembly().GetManifestResourceStream('icon.ico'));
   Main.StartPosition   := FormStartPosition.CenterScreen;
   Main.Text            := 'File Tree';
+  Main.HandleCreated   += MainHandleCreated;
   {$endregion}
   
   {$region PathView}
@@ -272,48 +351,61 @@ begin
   {$endregion}
   
   {$region Init}
-  var path := Application.ExecutablePath;
-  path := path.Substring(0, path.LastIndexOf('\')) + '\path.h';
-  if &File.Exists(path) then
-    foreach var line in &File.ReadAllLines(path) do
-      if line <> '' then
-        begin
-          var kw := line.Split('=');
-          if kw.Length = 2 then
-            case kw[0].ToLower() of
-              'terminal':  CmderPath := kw[1] + '\Cmder.exe';
-              'hexeditor': HexEditor := kw[1] + '\Be.HexEditor.exe';
-              'notepad':   Notepad   := kw[1] + '\notepad++.exe';
-            end;
-        end;
-  
-  foreach var drive: DriveInfo in DriveInfo.GetDrives() do
-    begin
-      var disk              := new TreeNode();
-      disk.Text             := drive.Name.TrimEnd('\');
-      disk.ImageKey         := 'disk';
-      disk.SelectedImageKey := 'disk';
-      
-      try
-        foreach var directory in Directory.GetDirectories(disk.Text+'\') do
+  begin
+    var path := Application.ExecutablePath;
+    path := path.Substring(0, path.LastIndexOf('\')) + '\path.h';
+    if &File.Exists(path) then
+      foreach var line in &File.ReadAllLines(path) do
+        if line <> '' then
           begin
-            var folder              := new TreeNode();
-            folder.Text             := directory.Substring(directory.LastIndexOf('\') + 1);
-            folder.ImageKey         := 'folder';
-            folder.SelectedImageKey := 'folder';
-            folder.ForeColor        := GetColorFromAttribute(directory, true);
-            folder.ContextMenuStrip := FolderMenu;
-            disk.Nodes.Add(folder);
+            var kw := line.Split('=');
+            if kw.Length = 2 then
+              case kw[0].ToLower() of
+                'terminal':  CmderPath := kw[1] + '\Cmder.exe';
+                'hexeditor': HexEditor := kw[1] + '\Be.HexEditor.exe';
+                'notepad':   Notepad   := kw[1] + '\notepad++.exe';
+              end;
           end;
-      except on ex: Exception do 
-        begin
-          disk.ForeColor   := Color.Gray;
-          disk.ToolTipText := ex.Message; 
-        end;
-      end;
+  
+    foreach var drive: DriveInfo in DriveInfo.GetDrives() do
+      begin
+        var disk              := new TreeNode();
+        disk.Text             := drive.Name.TrimEnd('\');
+        disk.ImageKey         := 'disk';
+        disk.SelectedImageKey := 'disk';
         
-      PathView.Nodes.Add(disk);
-    end;
+        try
+          foreach var directory in Directory.GetDirectories(disk.Text+'\') do
+            begin
+              var folder              := new TreeNode();
+              folder.Text             := directory.Substring(directory.LastIndexOf('\') + 1);
+              folder.ImageKey         := 'folder';
+              folder.SelectedImageKey := 'folder';
+              folder.ForeColor        := GetColorFromAttribute(directory, true);
+              folder.ContextMenuStrip := FolderMenu;
+              disk.Nodes.Add(folder);
+            end;
+        except on ex: Exception do 
+          begin
+            disk.ForeColor   := Color.Gray;
+            disk.ToolTipText := ex.Message; 
+          end;
+        end;
+          
+        PathView.Nodes.Add(disk);
+      end;
+  
+    var args := Environment.GetCommandLineArgs();
+    if args.Length > 1 then
+      begin
+        path := args[1];
+        
+        if Directory.Exists(path) then
+          Task.Factory.StartNew(() -> begin OpenPath(path); end)
+        else
+          Main.Text += $' - "{path}" not found.';
+      end;
+  end;
   {$endregion}
   
   {$region App}
