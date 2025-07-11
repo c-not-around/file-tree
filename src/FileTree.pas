@@ -75,8 +75,12 @@ end;
 
 procedure FillTreeNode(node: TreeNode; path: string; dept: integer := 0);
 begin
+  PathView.Invoke(() -> begin node.Nodes.Clear(); end);
+  
   if path[path.Length] = ':' then
     path += '\';
+  
+  var ErrorMessage: string;
   
   try
     foreach var f: string in Directory.GetDirectories(path) do
@@ -88,10 +92,10 @@ begin
         folder.ForeColor        := GetColorFromAttribute(f, true);
         folder.ContextMenuStrip := FolderMenu;
         
+        PathView.Invoke(() -> begin node.Nodes.Add(folder); end);
+        
         if dept > 0 then
           FillTreeNode(folder, f, dept-1);
-        
-        node.Nodes.Add(folder);
       end;
       
     foreach var f: string in Directory.GetFiles(path) do
@@ -104,12 +108,17 @@ begin
         &file.ForeColor        := GetColorFromAttribute(f);
         &file.ContextMenuStrip := FileMenu;
         
-        node.Nodes.Add(&file);
+        PathView.Invoke(() -> begin node.Nodes.Add(&file); end);
       end;
   except on ex: Exception do
     begin
-      node.ForeColor   := Color.Gray;
-      node.ToolTipText := ex.Message;
+      ErrorMessage := ex.Message;
+      PathView.Invoke(() -> 
+        begin
+          node.ForeColor   := Color.Gray;
+          node.ToolTipText := ErrorMessage;
+        end
+      );
     end;
   end;
 end;
@@ -118,8 +127,7 @@ end;
 {$region Handlers}
 procedure PathViewBeforeExpand(sender: object; e: TreeViewCancelEventArgs);
 begin
-  e.Node.Nodes.Clear();
-  FillTreeNode(e.Node, e.Node.FullPath, 1);
+  Task.Factory.StartNew(() -> begin FillTreeNode(e.Node, e.Node.FullPath, 1); end);
 end;
 
 procedure PathViewMouseClick(sender: object; e: MouseEventArgs);
@@ -264,18 +272,6 @@ begin
   {$endregion}
   
   {$region Init}
-  foreach var drive: DriveInfo in DriveInfo.GetDrives() do
-    begin
-      var disk              := new TreeNode();
-      disk.Text             := drive.Name.TrimEnd('\');
-      disk.ImageKey         := 'disk';
-      disk.SelectedImageKey := 'disk';
-        
-      FillTreeNode(disk, disk.Text);
-        
-      PathView.Nodes.Add(disk);
-    end;
-  
   var path := Application.ExecutablePath;
   path := path.Substring(0, path.LastIndexOf('\')) + '\path.h';
   if &File.Exists(path) then
@@ -290,6 +286,34 @@ begin
               'notepad':   Notepad   := kw[1] + '\notepad++.exe';
             end;
         end;
+  
+  foreach var drive: DriveInfo in DriveInfo.GetDrives() do
+    begin
+      var disk              := new TreeNode();
+      disk.Text             := drive.Name.TrimEnd('\');
+      disk.ImageKey         := 'disk';
+      disk.SelectedImageKey := 'disk';
+      
+      try
+        foreach var directory in Directory.GetDirectories(disk.Text+'\') do
+          begin
+            var folder              := new TreeNode();
+            folder.Text             := directory.Substring(directory.LastIndexOf('\') + 1);
+            folder.ImageKey         := 'folder';
+            folder.SelectedImageKey := 'folder';
+            folder.ForeColor        := GetColorFromAttribute(directory, true);
+            folder.ContextMenuStrip := FolderMenu;
+            disk.Nodes.Add(folder);
+          end;
+      except on ex: Exception do 
+        begin
+          disk.ForeColor   := Color.Gray;
+          disk.ToolTipText := ex.Message; 
+        end;
+      end;
+        
+      PathView.Nodes.Add(disk);
+    end;
   {$endregion}
   
   {$region App}
