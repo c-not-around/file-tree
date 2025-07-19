@@ -1,3 +1,3 @@
-terminal=D:\Portable\Cmder
-hexeditor=D:\Portable\HexEditor
-notepad=D:\Portable\Notepad++
+﻿terminal  = D:\Portable\Cmder\Cmder.exe
+hexeditor = D:\Portable\HexEditor\Be.HexEditor.exe
+notepad   = D:\Portable\Notepad++\Notepad++.exe

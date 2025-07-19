@@ -7,8 +7,7 @@ interface
 {$reference 'System.Drawing.dll'}
 
 
-uses
-  System.Drawing;
+uses System.Drawing;
 
 
 function GetFileIcon(fname: string): Icon;
@@ -17,10 +16,9 @@ function GetFileIcon(fname: string): Icon;
 implementation
 
 
-uses
-  System,
-  System.Runtime,
-  System.Runtime.InteropServices;
+uses System;
+uses System.Runtime;
+uses System.Runtime.InteropServices;
 
 
 type
