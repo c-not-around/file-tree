@@ -73,6 +73,21 @@ type
         result := Color.Black;
     end;
     
+    private function CreateNode(root: TreeNode; path: string; folder: boolean := true): TreeNode;
+    begin
+      var node := new TreeNode(path.Substring(path.LastIndexOf('\') + 1));
+      var key  := folder ? 'folder' : GetIconKeyFromExt(path);
+      
+      node.ImageKey         := key;
+      node.SelectedImageKey := key;
+      node.ForeColor        := GetColorFromAttribute(path, true);
+      node.ContextMenuStrip := folder ? _FolderMenu : _FileMenu;
+      
+      Invoke(() -> root.Nodes.Add(node));
+      
+      result := node;
+    end;
+    
     private procedure FillTreeNode(node: TreeNode; path: string; dept: integer := 1);
     begin
       Invoke(() -> node.Nodes.Clear());
@@ -82,30 +97,28 @@ type
       
       var ErrorMessage: string;
       try
-        foreach var f: string in Directory.GetDirectories(path) do
+        if dept = 1 then
           begin
-            var folder              := new TreeNode(f.Substring(f.LastIndexOf('\') + 1));
-            folder.ImageKey         := 'folder';
-            folder.SelectedImageKey := 'folder';
-            folder.ForeColor        := GetColorFromAttribute(f, true);
-            folder.ContextMenuStrip := _FolderMenu;
+            foreach var f: string in Directory.GetDirectories(path) do
+              begin
+                var folder := CreateNode(node, f);
+                
+                if dept > 0 then
+                  FillTreeNode(folder, f, dept-1);
+              end;
             
-            Invoke(() -> node.Nodes.Add(folder));
-            
-            if dept > 0 then
-              FillTreeNode(folder, f, dept-1);
-          end;
-        
-        foreach var f: string in Directory.GetFiles(path) do
+            foreach var f: string in Directory.GetFiles(path) do
+              CreateNode(node, f, false);
+          end
+        else
           begin
-            var &file              := new TreeNode(f.Substring(f.LastIndexOf('\') + 1));
-            var ImageKey           := GetIconKeyFromExt(f);
-            &file.ImageKey         := ImageKey;
-            &file.SelectedImageKey := ImageKey;
-            &file.ForeColor        := GetColorFromAttribute(f);
-            &file.ContextMenuStrip := _FileMenu;
+            var folders := Directory.GetDirectories(path);
+            var files   := Directory.GetFiles(path);
             
-            Invoke(() -> node.Nodes.Add(&file));
+            if folders.Length > 0 then
+              CreateNode(node, folders[0])
+            else if files.Length > 0 then
+              CreateNode(node, files[0], false);
           end;
       except on ex: Exception do
         begin
