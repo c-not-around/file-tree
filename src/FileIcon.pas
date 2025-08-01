@@ -44,8 +44,8 @@ external 'User32.dll' name 'DestroyIcon';
 function GetFileIcon(fname: string): Icon;
 begin
   var shinfo := new SHFILEINFO();
-  var hImg   := SHGetFileInfo(fname, $80, shinfo, Marshal.SizeOf(shinfo), $000000100 or $000000001);
-  result     := Icon.FromHandle(shinfo.hIcon).Clone() as Icon;
+  SHGetFileInfo(fname, $80, shinfo, Marshal.SizeOf(shinfo), $000000100 or $000000001);
+  result := Icon.FromHandle(shinfo.hIcon).Clone() as Icon;
   DestroyIcon(shinfo.hIcon);
 end;
 

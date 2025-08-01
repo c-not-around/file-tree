@@ -36,6 +36,7 @@ type
     private _FolderMenu   : System.Windows.Forms.ContextMenuStrip;
     private _ExternalApps : ExternalAppPaths;
     private _ExpandEnd    : boolean;
+    private _Expanding    : integer;
     {$endregion}
     
     {$region Routines}
@@ -88,7 +89,7 @@ type
       result := node;
     end;
     
-    private procedure FillTreeNode(node: TreeNode; path: string; dept: integer := 1);
+    private procedure FillTreeNode(node: TreeNode; path: string; cancel: CancellationToken; dept: integer := 1);
     begin
       Invoke(() -> node.Nodes.Clear());
       
@@ -104,11 +105,19 @@ type
                 var folder := CreateNode(node, f);
                 
                 if dept > 0 then
-                  FillTreeNode(folder, f, dept-1);
+                  FillTreeNode(folder, f, cancel, dept-1);
+                
+                if cancel.IsCancellationRequested then
+                  break;
               end;
             
             foreach var f: string in Directory.GetFiles(path) do
-              CreateNode(node, f, false);
+              begin
+                CreateNode(node, f, false);
+                
+                if cancel.IsCancellationRequested then
+                  break;
+              end;
           end
         else
           begin
@@ -134,7 +143,12 @@ type
       
       if dept = 1 then
         begin
-          Invoke(() -> begin Cursor := Cursors.Default; end);
+          if _Expanding > 0 then
+            _Expanding -= 1;
+          
+          if _Expanding = 0 then
+            Invoke(() -> begin Cursor := Cursors.Default; end);
+          
           _ExpandEnd := true;
         end;
     end;
@@ -214,7 +228,26 @@ type
     private procedure PathViewBeforeExpand(sender: object; e: TreeViewCancelEventArgs);
     begin
       Cursor := Cursors.WaitCursor;
-      Task.Factory.StartNew(() -> FillTreeNode(e.Node, e.Node.FullPath));
+      
+      _Expanding += 1;
+      
+      var cancel := new CancellationTokenSource();
+      e.Node.Tag := cancel;
+      Task.Factory.StartNew(() -> 
+        begin
+          FillTreeNode(e.Node, e.Node.FullPath, cancel.Token);
+          e.Node.Tag := nil;
+          cancel.Dispose();
+        end
+      );
+    end;
+    
+    private procedure PathViewBeforeCollapse(sender: object; e: TreeViewCancelEventArgs);
+    begin
+      var cancel := e.Node.Tag as CancellationTokenSource;
+      
+      if cancel <> nil then
+        cancel.Cancel();
     end;
     
     private procedure PathViewMouseClick(sender: object; e: MouseEventArgs);
@@ -255,6 +288,7 @@ type
       _PathView.ShowPlusMinus    := true;
       _PathView.Scrollable       := true;
       _PathView.BeforeExpand     += PathViewBeforeExpand;
+      _PathView.BeforeCollapse   += PathViewBeforeCollapse;
       _PathView.MouseClick       += PathViewMouseClick;
       Controls.Add(_PathView);
       {$endregion}
@@ -311,6 +345,8 @@ type
       var path := Application.ExecutablePath;
       path := path.Substring(0, path.LastIndexOf('\') + 1) + 'path.h';
       _ExternalApps := new ExternalAppPaths(path);
+      
+      _Expanding := 0;
       
       foreach var drive: DriveInfo in DriveInfo.GetDrives() do
         begin

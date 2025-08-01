@@ -6,7 +6,6 @@
 
 
 uses System;
-uses System.Globalization;
 uses System.Windows.Forms;
 uses FileTreeMainForm;
 
